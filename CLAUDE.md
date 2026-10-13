@@ -47,10 +47,14 @@ Read before changing code: `ARCHITECTURE.md`, `CODE_MAP.md`, `SUBSYSTEMS.md`, `D
 
 ## Existing hooks worth knowing
 
-- Player: `0x8C7E0(name hash)` is a cdecl lookup by name; for `player0` (`0x660E4490`) it returns the player
-  controller (vtable `0x2E65E0`). `controller + 0x998` is the human actor (`dev_player_actor.h`);
-  `controller + 0x10` is the entity its position accessor reports. Evidence: `test_player_actor_retail.py`.
-  `dev_battle_guest.h` treats the lookup result as the human; see NOTES.md before relying on it.
+- Player: `0x8C7E0(name hash)` looks up the player's AI (`RsAiPlayer`, vtable `0x2E65E0`) in a 2-slot table;
+  for `player0` (`0x660E4490`) it returns the one player. Never register a second player there: once both slots
+  are used, lookups of any other name never return. `ai + 0x998` is the human actor (`dev_player_actor.h`);
+  `ai + 0x10` is the controlled entity. NPC AIs: `0x66490(name)`. Script names resolve through `0x1EC270`
+  (`'player0'` is the human). Details and evidence: NOTES.md. `dev_battle_guest.h` and the crew lookup at
+  `dev_spawn.h:457` use the wrong objects (NOTES.md).
+- Driving actors: every human or vehicle takes control IDs through `vt[0x1E4](id, value)`. The player's AI sends
+  them (`0x90470`), and so does NPC AI. Teleport a human with `vt[0x30](&matrix)` (as respawn does).
 - World-update checkpoint: `Patch-Generated.py` inserts `recomp_dev_spawn_tick()`, the boids tick and
   `recomp_multiplayer_tick(ecx, frame seconds)` (`multiplayer_guest.h`) at the top of `sub_001702D0`. Multiplayer
   per-update work goes in `recomp_multiplayer_tick`; keep the `TRANSLATOR_INLINED_PATCHES` text in step.

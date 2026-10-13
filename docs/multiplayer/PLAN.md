@@ -47,10 +47,16 @@ Then pick how to drive the puppet, in this order of preference:
 - (b) script or AI move-to orders, with a teleport when it's more than a few metres off;
 - (c) writing its position and animation state directly.
 
+Answered 2026-10-13 (NOTES.md, "M1 answers"). The engine supports exactly one player: a second player controller
+would take over the camera, HUD and control scheme, and its 2-slot lookup table can hang. So (a) becomes **(a′)**:
+the puppet is an ordinary NPC human, and the remote player's actor-level control IDs go into its control slot
+`vt[0x1E4]`, the same channel NPC AI uses. Position updates correct it through the respawn teleport `vt[0x30]`.
+(b) and (c) stay as fallbacks.
+
 Build:
 
-- [ ] Record your own play (the M0 state log), spawn a puppet human, and replay the recording on it a few seconds
-      behind you.
+- [ ] Record your own play (the M0 state log plus the control IDs the player sends through `vt[0x1E4]`), spawn a
+      puppet human, and replay the recording on it a few seconds behind you.
 - [ ] The puppet walks, runs, turns and aims with the right animations; AI doesn't attack it and it doesn't attack
       AI; it isn't despawned; it survives streaming as you move around.
 
