@@ -24,6 +24,8 @@ Read before changing code: `ARCHITECTURE.md`, `CODE_MAP.md`, `SUBSYSTEMS.md`, `D
   `AA08EA21D952AC35F49C02C7E2ED08AA25AD7535FBBBCCC95636775F37BE99D7`). Note where each one came from in NOTES.md.
 - Multiplayer is off by default. With it off, the game must behave exactly as before.
 - Keep install and checkout paths short: the runtime uses `MAX_PATH` buffers.
+- Check out with LF line endings (`git config core.autocrlf false`, then a fresh checkout): Git for Windows defaults
+  to CRLF, and several tests pin file hashes. The exe is the same either way.
 
 ## Commands (PowerShell, from the repo root)
 
@@ -34,17 +36,24 @@ Read before changing code: `ARCHITECTURE.md`, `CODE_MAP.md`, `SUBSYSTEMS.md`, `D
 - After changing only port or runtime C: `& .\ports\mercenaries\scripts\Build.ps1`
 - Run: `& .\ports\mercenaries\scripts\Run.ps1` (starts `mercenaries_recomp.exe` with the extracted game)
 - Developer settings: `developer.ini` beside the exe. `developer_menu=1` gives F9 developer tools and F11 free cam;
-  `logging=1` writes logs to `preview-logs` (F8 marks a moment in them). Restart after changing it.
-- Tests: `& .\.venv\Scripts\python.exe -X utf8 -B tools/recomp/run_tests.py --match <name> --output artifacts/<new dir>`
-  (`--list` lists them; use a new output folder each run). The recorded baseline is 458 of 471 modules passing
-  (`docs/maintenance-validation.md`), so check a failure against it before chasing it.
+  `logging=1` writes logs to `preview-logs` (F8 marks a moment in them); `player_state_log=1` (with `logging=1`)
+  logs the player's state a few times a second (`player_state_log_hz`, default 5). Restart after changing it.
+- Tests: `.tools\run-tests.cmd artifacts\<new dir> [--match <name>]` on this machine (local, git-ignored: MSVC
+  14.44 developer shell, GCC at `C:\MinGW\bin`, a header shim). By hand: `run_tests.py --output artifacts/<new dir>`
+  from an x64 VS developer shell with GCC on PATH, `C:\msys64\mingw64\bin\gcc.exe`, and `pytest`, `numpy`,
+  `unicorn==2.1.4` in `.venv` (`--list` lists them; use a new output folder each run). Local baseline: 463 of 489
+  modules pass; the 26 failures are explained in `docs/multiplayer/NOTES.md`. That includes the 13 from
+  `docs/maintenance-validation.md`, so check a failure against both before chasing it.
 
 ## Existing hooks worth knowing
 
-- Player: `0x8C7E0` returns the player controller (its constructor installs vtable `0x2E65E0`); `controller + 0x998`
-  is the player's human actor (`dev_player_actor.h`).
-- World-update checkpoint: `Patch-Generated.py` inserts `recomp_dev_spawn_tick()` (and the boids tick) at the top of
-  `sub_001702D0`. Per-update multiplayer work can hook in beside it.
+- Player: `0x8C7E0(name hash)` is a cdecl lookup by name; for `player0` (`0x660E4490`) it returns the player
+  controller (vtable `0x2E65E0`). `controller + 0x998` is the human actor (`dev_player_actor.h`);
+  `controller + 0x10` is the entity its position accessor reports. Evidence: `test_player_actor_retail.py`.
+  `dev_battle_guest.h` treats the lookup result as the human; see NOTES.md before relying on it.
+- World-update checkpoint: `Patch-Generated.py` inserts `recomp_dev_spawn_tick()`, the boids tick and
+  `recomp_multiplayer_tick(ecx, frame seconds)` (`multiplayer_guest.h`) at the top of `sub_001702D0`. Multiplayer
+  per-update work goes in `recomp_multiplayer_tick`; keep the `TRANSLATOR_INLINED_PATCHES` text in step.
 - Spawning characters and squads: `dev_spawn.h`, `dev_battle.h`, `dev_factions.h`.
 - The game's Lua VM: `mod_run_lua(vm, text)` (`mod_gameplay_guest.h`) runs Lua in the game's own script VM.
   `mod_gameplay.lua` uses the game's script API: `Utility_GetActor('player0')`, `Actor_GetPosition`, `Actor_IsAlive`,

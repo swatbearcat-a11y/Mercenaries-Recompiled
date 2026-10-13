@@ -20,11 +20,12 @@ or more players see each other, travel and drive together, and can fight. Each p
 
 ## M0: build and baseline
 
-- [ ] Build from the ISO; note the executable hash from `mercenaries-build-provenance.json`.
-- [ ] The game runs; `developer_menu=1` and `logging=1` work; spawning from F9 works.
-- [ ] A test run recorded and compared with the 458/471 baseline.
+- [x] Build from the ISO; note the executable hash from `mercenaries-build-provenance.json`.
+- [x] The game runs; `developer_menu=1` and `logging=1` work; spawning from F9 works.
+- [x] A test run recorded and compared with the 458/471 baseline (see NOTES.md for the local baseline).
 - [ ] A debug option that logs the player's state (position, heading, velocity, current vehicle, health, weapon)
-      a few times a second. Every later step is checked with it.
+      a few times a second. Every later step is checked with it. Implemented as `player_state_log` and
+      unit-tested; still to be checked in game.
 
 ## M1: a puppet on one PC (no network yet)
 
@@ -34,8 +35,8 @@ Answer these first, in `NOTES.md`:
    `Ai_*`, `Utility_*`, `Vehicle_*` (and similar) functions: setting a position, move-to orders, animations,
    getting in and out of vehicles, damage, invulnerability, faction, turning AI off.
 2. **Does the engine know about more than one player?** Scripts call the player `'player0'`. Check whether
-   `'player1'` means anything, and whether the player-controller class (getter `0x8C7E0`, vtable `0x2E65E0`) can be
-   created for a second human.
+   `'player1'` means anything, and whether the player-controller class (found by the name lookup `0x8C7E0`,
+   vtable `0x2E65E0`) can be created for a second human.
 3. **How does the player controller get its input?** Trace from `XInputGetState` (`src/input/xinput_device.c`) to
    the controller object. Could a second controller read a virtual port fed by the network?
 
