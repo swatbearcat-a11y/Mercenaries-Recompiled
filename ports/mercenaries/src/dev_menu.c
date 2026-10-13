@@ -60,6 +60,32 @@ int recomp_dev_menu_allowed(void) {
 int recomp_developer_logging_enabled(void) {
     return developer_setting("logging");
 }
+/* Numeric companion to developer_setting: same file and section. */
+static int developer_number(const char *name, int fallback) {
+    char path[MAX_PATH];
+    DWORD n = GetModuleFileNameA(NULL, path, sizeof(path));
+    if (!n || n >= sizeof(path)) return fallback;
+    char *slash = strrchr(path, '\\');
+    if (!slash) return fallback;
+    slash[1] = 0;
+    if (strcat_s(path, sizeof(path), "developer.ini")) return fallback;
+    char root[MAX_PATH];DWORD length=GetEnvironmentVariableA("MERCENARIES_CONFIG_ROOT",root,MAX_PATH);
+    if(length && length+sizeof("\\developer.ini")<=MAX_PATH)snprintf(path,sizeof(path),"%s\\developer.ini",root);
+    return (int)GetPrivateProfileIntA("Developer", name, fallback, path);
+}
+/* Samples per second for the multiplayer player-state log; 0 when it is off.
+ * player_state_log=1 enables it, player_state_log_hz (1-30) sets the rate. */
+int recomp_dev_player_state_log_hz(void) {
+    static int hz = -1;
+    if (hz < 0) {
+        hz = 0;
+        if (developer_setting("player_state_log")) {
+            int requested = developer_number("player_state_log_hz", 5);
+            hz = requested >= 1 && requested <= 30 ? requested : 5;
+        }
+    }
+    return hz;
+}
 #define C_BG RGB(25,29,35)
 #define C_FIELD RGB(36,42,50)
 #define C_TEXT RGB(224,230,237)

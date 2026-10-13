@@ -14553,6 +14553,14 @@ PATCHES += (GeneratedPatch("Developer spawn world-thread checkpoint",
     '    RECOMP_TRACE_FUNC(0x001702D0u);\n    { void recomp_boids_tick',
     '    RECOMP_TRACE_FUNC(0x001702D0u);\n    { void recomp_dev_spawn_tick(void); recomp_dev_spawn_tick(); }\n    { void recomp_boids_tick'),)
 
+# Multiplayer per-update work (multiplayer_guest.h) runs after the developer and
+# boids ticks, with this call's object and frame time. Off by default.
+PATCHES += (GeneratedPatch("Multiplayer world-thread checkpoint",
+    '      recomp_boids_tick(MEM32(esp+4u),MEM32(esp+8u),MEM32(esp+12u)); }\n\nloc_001702D0: ;',
+    '      recomp_boids_tick(MEM32(esp+4u),MEM32(esp+8u),MEM32(esp+12u)); }\n'
+    '    { void recomp_multiplayer_tick(uint32_t,uint32_t);\n'
+    '      recomp_multiplayer_tick(ecx,MEM32(esp+4u)); }\n\nloc_001702D0: ;'),)
+
 # The legal-credit movement mode (7) branches into the default arm, immediately
 # before the shared AddName commit/epilogue. It is not a standalone empty return.
 PATCHES += (GeneratedPatch("Credits stationary name placement continuation",
@@ -14567,7 +14575,9 @@ TRANSLATOR_INLINED_PATCHES["Boid simulation world tick"] = (
     '    RECOMP_TRACE_FUNC(0x001702D0u);\n'
     '    { void recomp_dev_spawn_tick(void); recomp_dev_spawn_tick(); }\n'
     '    { void recomp_boids_tick(uint32_t,uint32_t,uint32_t);\n'
-    '      recomp_boids_tick(MEM32(esp+4u),MEM32(esp+8u),MEM32(esp+12u)); }\n\nloc_001702D0: ;')
+    '      recomp_boids_tick(MEM32(esp+4u),MEM32(esp+8u),MEM32(esp+12u)); }\n'
+    '    { void recomp_multiplayer_tick(uint32_t,uint32_t);\n'
+    '      recomp_multiplayer_tick(ecx,MEM32(esp+4u)); }\n\nloc_001702D0: ;')
 
 
 # A failed Prepare owns a wrapper/source even though it never returned a handle.

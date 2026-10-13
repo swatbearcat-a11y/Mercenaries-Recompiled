@@ -11,6 +11,7 @@ typedef struct DevVehicle {
 void recomp_dev_menu_init(HWND owner, void (*bookmark)(void));
 int recomp_dev_menu_allowed(void);
 int recomp_developer_logging_enabled(void);
+int recomp_dev_player_state_log_hz(void);
 void recomp_dev_menu_set_display_callback(void (*callback)(int));
 void recomp_dev_menu_toggle(void);
 void recomp_dev_freecam_toggle(void);
