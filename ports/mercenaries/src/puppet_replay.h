@@ -20,6 +20,7 @@
 #define PUPPET_TEMPLATE "template_allies_soldier"
 #define PUPPET_STEER_GAIN 1.5f      /* m/s of correction per metre of offset */
 #define PUPPET_STEER_TURN 1.5707964f /* at most 90 degrees */
+#define PUPPET_OCCUPIED_M 1.2f      /* two humans stay about 1.05 m apart (m1-replay-10) */
 
 typedef struct PuppetEvent { double t; uint32_t id, value; } PuppetEvent;
 /* Character controller: human->vt[0x3BC]() returns human + 0x280 for both human
@@ -390,10 +391,20 @@ static void puppet_replay_tick(uint32_t world, uint32_t delta_bits)
     uint32_t control = 0, teleport = 0, set_yaw = 0, body = 0;
     if (actor && target && puppet_virtual(actor, 0x1E4, &control)) {
         body = puppet_controller(stack, actor);
+        /* A spot the local player stands on can't be reached: don't steer or
+         * correct toward it, or the puppet is pushed around the player (on one
+         * PC the target is the player whenever the player stands still,
+         * m1-replay-08 and -10). */
+        puppet.occupied = 0;
+        if (human) {
+            float px = guest_f32(human + 0xE0u) - target->matrix[12], pz = guest_f32(human + 0xE8u) - target->matrix[14];
+            puppet.occupied = px * px + pz * pz < PUPPET_OCCUPIED_M * PUPPET_OCCUPIED_M;
+        }
         float velocity[2];
         puppet_recorded_velocity(target, velocity);
-        PuppetDrive drive = puppet_drive(target, velocity, target->matrix[12] - guest_f32(actor + 0xE0u),
-                                         target->matrix[14] - guest_f32(actor + 0xE8u), recomp_dev_puppet_steer());
+        float ex = puppet.occupied ? 0.0f : target->matrix[12] - guest_f32(actor + 0xE0u);
+        float ez = puppet.occupied ? 0.0f : target->matrix[14] - guest_f32(actor + 0xE8u);
+        PuppetDrive drive = puppet_drive(target, velocity, ex, ez, recomp_dev_puppet_steer());
         /* The move frame first: the input below is relative to it. */
         const float *f = drive.frame;
         if (f[0] * f[0] + f[1] * f[1] + f[2] * f[2] > 0.25f && recomp_lookup(0x7E910u)) {
@@ -433,15 +444,6 @@ static void puppet_replay_tick(uint32_t world, uint32_t delta_bits)
         }
         float dx = guest_f32(actor + 0xE0u) - target->matrix[12], dy = guest_f32(actor + 0xE4u) - target->matrix[13];
         float dz = guest_f32(actor + 0xE8u) - target->matrix[14];
-        /* No correction onto a spot the local player stands on: the puppet
-         * would be pushed straight off it again (m1-replay-08: replaying the
-         * player's own path, the puppet's target is the player whenever the
-         * player stands still). */
-        puppet.occupied = 0;
-        if (human) {
-            float px = guest_f32(human + 0xE0u) - target->matrix[12], pz = guest_f32(human + 0xE8u) - target->matrix[14];
-            puppet.occupied = px * px + pz * pz < 0.9f * 0.9f;
-        }
         int correct_cm = puppet.occupied ? 0 : recomp_dev_puppet_correct_cm();
         int drifted = correct_cm > 0 && dx * dx + dy * dy + dz * dz > (correct_cm / 100.0f) * (correct_cm / 100.0f);
         int driven = drive.move[0] * drive.move[0] + drive.move[1] * drive.move[1] > 0.0001f;

@@ -295,8 +295,10 @@ Options (`developer.ini`, read once at start):
   - Without input: the puppet walks while that velocity is over 0.3 m/s or it is more than 0.3 m away, and stops
     within 0.1 m.
 - **Stuck.** A puppet that is fed input, more than 0.5 m off, and moves less than 0.25 m in a second is teleported.
-- **Occupied target.** There is no correction onto a spot the local player is standing on: the puppet would be
-  pushed straight off it again. On one PC the target *is* the player whenever the player stands still.
+- **Occupied target.** When the local player stands within 1.2 m of the target, the puppet gets no offset steering
+  and no correction teleports, only the recorded velocity. Two humans can't get closer than about 1.05 m, so the
+  target can't be reached; pushing toward it only shoves the puppet around the player. On one PC the target *is*
+  the player whenever the player stands still.
 
 ### The character controller (verified in retail code and in game)
 
@@ -412,14 +414,17 @@ runs 02–08 were recomputed afterwards from the player-state log.
 | 08 | + stuck teleport | 0.10 / 0.22 / 0.46 | 8 (7 stuck) | 0.85 | 11° |
 | 09 | no correction onto the player's spot | 0.09 / 0.29 / 0.72 | 1 | 0.87 | 8° |
 | 10 | same code, `--show` (visible window) | 0.09 / 0.28 / 1.75 | 0 | 0.99 | 152° |
+| 11 | occupied radius 1.2 m, no offset steering toward an occupied spot | 0.09 / 0.52 / 1.02 | 0 | 1.00 | 23° |
 
 - **In every run:** yaw error median 0° (p90 0.1°); `ai=00000000`; one spawn; no spawn failures.
 - **Run 08's stuck teleports** were all onto the standing player.
 - **Run 10's outliers.** At the end, the puppet replayed the last backward walk into the standing player. It
   stayed 1.04–1.08 m from the player, the closest two humans get, while its target crossed the player's spot. Two
   samples had the target 0.94 and 1.08 m from the player, just outside the 0.9 m "occupied" radius. They give the
-  1.75 m max and the 152° direction p90. Next: a radius of about 1.2 m, and no offset steering toward an occupied
-  spot.
+  1.75 m max and the 152° direction p90.
+- **Run 11, with the fix.** At the end the puppet waits 1.02–1.07 m from the standing player (all samples
+  occupied) instead of pushing around them. Its larger free errors (up to 1.02 m) come in the second after the
+  player leaves a spot: the puppet was held back and catches up at about 1 m/s (0.97, 0.71, 0.54 m).
 - **Run 09's last two screenshots** show the puppet beside the player.
 - **Speed-ratio p10 near 0** comes from moments the puppet is blocked by the player or cargo.
 - **Exe hash** of the run-09 build: `080A1E62005FF4C4BEF977DE6FEAD63BFE06ACE02F6AA484EC172A6679970DDE`.

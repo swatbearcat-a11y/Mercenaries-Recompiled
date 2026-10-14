@@ -184,11 +184,13 @@ static const struct {unsigned char gait,run_allowed;float strafe,forward,want_st
  {0,1,0.005f,0.0f,0.005f,0.0f}, /* inside the 0.01 dead zone: unchanged */
 };
 /* Steering recording, facing -z from (10,2,5): frames 1-60 walk forward (input
- * 0.987, gait walk, 2.27 m/s along -z), 61-120 stand still, 121-180 drift +x at
- * 0.6 m/s without input (as standing up from a seat does). */
+ * 0.987, gait walk, 2.27 m/s along -z), then stand still. With steer_leaves set,
+ * frames 91 on drift +x at 3 m/s without input (as standing up from a seat
+ * does), so the still spot is free again from about update 103. */
+static int steer_leaves;
 static void steer_frame(unsigned i){
  int walking=i<=60;
- float x=10.0f+(i>120?0.6f*dt*(float)(i-120):0.0f),z=5.0f-2.27f*dt*(float)((i<60?i:60)-1);
+ float x=10.0f+(steer_leaves&&i>90?3.0f*dt*(float)(i-90):0.0f),z=5.0f-2.27f*dt*(float)((i<60?i:60)-1);
  float m[16]={1,0,0,0, 0,1,0,0, 0,0,1,0, x,2,z,1};
  current_tick=i;
  memcpy(guest_ptr(HUMAN+0xB0),m,64);
@@ -283,8 +285,9 @@ int main(void){
  assert(checked>=2*50*(cases-1));
  assert(strafe_calls==1&&memory[ACTOR_BODY+0x68]==1&&(strafe_tick==130||strafe_tick==131));
 
- /* Steering, on steer_frame's recording (replayed 30-31 updates later). */
- reset(1000,0,1);steer=1;steer_tick=0;
+ /* Steering, on steer_frame's recording (replayed 30-31 updates later), with the player
+  * leaving the still spot so the puppet may walk to it. */
+ reset(1000,0,1);steer=1;steer_tick=0;steer_leaves=1;
  while(steer_tick<69)steer_step(0.0f,0.0f);                /* on the recorded path: as recorded */
  assert(spawn_calls==1&&!unexpected);
  const float *v=frames_set[frame_count-1].v;
@@ -305,8 +308,8 @@ int main(void){
  assert(fabsf(v[0])<1e-4f&&fabsf(v[2]+1.0f)<1e-4f&&fabsf(guest_f32(ACTOR_BODY+0x44)-3.020f)<0.01f);
  steer_step(0.0f,-0.5f);                                   /* 0.5 m ahead: slower */
  assert(fabsf(guest_f32(ACTOR_BODY+0x44)-1.520f)<0.01f);
- while(steer_tick<99)steer_step(0.0f,0.0f);
- assert(fed_value(0x1F)==0.0f&&!puppet.catching_up);       /* the recording stands still, on the spot */
+ while(steer_tick<104)steer_step(0.0f,0.0f);               /* the player is 1.4 m away by now */
+ assert(fed_value(0x1F)==0.0f&&!puppet.catching_up&&!puppet.occupied); /* the recording stands still, on the spot */
  steer_step(0.0f,0.5f);                                    /* 0.5 m from it: walk there */
  v=frames_set[frame_count-1].v;
  assert(fabsf(v[0])<1e-6f&&fabsf(v[2]+1.0f)<1e-6f&&fabsf(fed_value(0x1F)-0.5f)<1e-5f&&puppet.catching_up);
@@ -320,10 +323,17 @@ int main(void){
  assert(guest_f32(ACTOR_BODY+0x44)==2.27f);
  steer_step(0.2f,0.0f);                                    /* 0.2 m without catching up: stays */
  assert(fed_value(0x1F)==0.0f&&!puppet.catching_up);
- while(steer_tick<160)steer_step(0.0f,0.0f);               /* the recording drifts +x without input: follow */
+ while(steer_tick<135)steer_step(0.0f,0.0f);               /* the recording drifts +x without input: follow */
  v=frames_set[frame_count-1].v;
  assert(puppet.catching_up&&fabsf(v[0]-1.0f)<1e-3f&&fabsf(v[2])<1e-3f&&fabsf(fed_value(0x1F)-0.5f)<1e-5f);
- assert(fabsf(guest_f32(ACTOR_BODY+0x44)-0.681f)<0.005f&&!unexpected&&teleport_calls==0);
+ assert(fabsf(guest_f32(ACTOR_BODY+0x44)-2.27f)<0.005f&&!unexpected&&teleport_calls==0); /* 3 m/s: full walk */
+
+ /* Occupied: the recording stands still where the player still stands. No walking to it and no
+  * correction, even 3 m away with 2 m corrections on. */
+ reset(1000,200,1);steer=1;steer_tick=0;steer_leaves=0;
+ while(steer_tick<99)steer_step(0.0f,0.0f);
+ steer_step(0.0f,3.0f);
+ assert(puppet.occupied&&!puppet.catching_up&&fed_value(0x1F)==0.0f&&teleport_calls==0&&strstr(line,"occupied=1"));
 
  /* Stuck check: driven, over 0.5 m off and under 0.25 m of movement in a second. */
  memset(&puppet,0,sizeof(puppet));puppet.now=5.0;
@@ -337,7 +347,7 @@ int main(void){
  /* In the game: the stub puppet never moves, so it is stuck once the walking recording is
   * 0.5 m ahead for a second (drift corrections only past 10 m here); never onto the spot
   * where the player stands still. */
- reset(1000,1000,1);steer=1;steer_tick=0;
+ reset(1000,1000,1);steer=1;steer_tick=0;steer_leaves=0;
  while(steer_tick<80){steer_frame(++steer_tick);tick();}
  assert(spawn_calls==1&&teleport_calls==1&&puppet.teleports==1&&puppet.stuck_teleports==1&&!unexpected);
  while(steer_tick<130){steer_frame(++steer_tick);tick();}
