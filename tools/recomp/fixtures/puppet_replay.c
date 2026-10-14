@@ -85,6 +85,14 @@ static unsigned long long now_ms;
 static unsigned long long puppet_fixture_ticks(void){return now_ms;}
 #include "dev_spawn.h"
 #include "multiplayer_guest.h"
+/* Multiplayer stays off in this fixture (multiplayer_session.c tests it). */
+const MpConfig *mp_config(void){static MpConfig off;return &off;}
+MpNet *mp_net_default(void){return NULL;}
+int mp_net_send(MpNet *n,const void *d,size_t s,int r){(void)n;(void)d;(void)s;(void)r;return 0;}
+int mp_net_poll(MpNet *n,MpIncoming *o){(void)n;(void)o;return 0;}
+uint8_t mp_net_local_player(MpNet *n){(void)n;return MP_NO_PLAYER;}
+unsigned mp_net_peer_count(MpNet *n){(void)n;return 0;}
+double mp_net_now_ms(void){return 0;}
 static void retail_call(void){
  calls++;
  uint32_t a1=guest_u32(g_esp+4),a2=guest_u32(g_esp+8);
@@ -260,7 +268,7 @@ int main(void){
  /* The player's walk and run speeds replace the soldier's once; a zero speed is ignored. */
  assert(speed_calls==2&&guest_f32(ACTOR_BODY+0x44)==2.27f&&guest_f32(ACTOR_BODY+0x48)==8.47f);
  /* The stub puppet never walks, so it drifts 3 m/s behind and is teleported at > 2 m. */
- assert(puppet.teleports>=3&&teleport_calls==puppet.teleports);
+ assert(puppet.actor.teleports>=3&&teleport_calls==puppet.actor.teleports);
  assert(yaw_calls>=100);
  assert(fabsf(last_yaw)<0.001f);                        /* back (0,0,1): yaw = -atan2(0,1) = 0 */
  assert(samples>=20&&strstr(line,"actor=00300000 ai=00000000")&&strstr(line,"move=0.250,")&&strstr(line,"yaw_mode=1"));
@@ -309,23 +317,23 @@ int main(void){
  steer_step(0.0f,-0.5f);                                   /* 0.5 m ahead: slower */
  assert(fabsf(guest_f32(ACTOR_BODY+0x44)-1.520f)<0.01f);
  while(steer_tick<104)steer_step(0.0f,0.0f);               /* the player is 1.4 m away by now */
- assert(fed_value(0x1F)==0.0f&&!puppet.catching_up&&!puppet.occupied); /* the recording stands still, on the spot */
+ assert(fed_value(0x1F)==0.0f&&!puppet.actor.catching_up&&!puppet.actor.occupied); /* the recording stands still, on the spot */
  steer_step(0.0f,0.5f);                                    /* 0.5 m from it: walk there */
  v=frames_set[frame_count-1].v;
- assert(fabsf(v[0])<1e-6f&&fabsf(v[2]+1.0f)<1e-6f&&fabsf(fed_value(0x1F)-0.5f)<1e-5f&&puppet.catching_up);
+ assert(fabsf(v[0])<1e-6f&&fabsf(v[2]+1.0f)<1e-6f&&fabsf(fed_value(0x1F)-0.5f)<1e-5f&&puppet.actor.catching_up);
  assert(fabsf(guest_f32(ACTOR_BODY+0x44)-0.75f)<0.005f);  /* 1.5/s * 0.5 m */
  steer_step(0.2f,0.0f);                                    /* 0.2 m: keeps going, at the 0.3x floor */
  v=frames_set[frame_count-1].v;
  assert(fabsf(v[0]+1.0f)<1e-6f&&fabsf(v[2])<1e-6f&&fabsf(fed_value(0x1F)-0.5f)<1e-5f&&fabsf(guest_f32(ACTOR_BODY+0x44)-0.681f)<0.005f);
  steer_step(0.05f,0.0f);                                   /* inside 0.1 m: stops, recorded frame and speeds */
  v=frames_set[frame_count-1].v;
- assert(fed_value(0x1F)==0.0f&&fed_value(0x1E)==0.0f&&!puppet.catching_up&&fabsf(v[2]+1.0f)<1e-6f);
+ assert(fed_value(0x1F)==0.0f&&fed_value(0x1E)==0.0f&&!puppet.actor.catching_up&&fabsf(v[2]+1.0f)<1e-6f);
  assert(guest_f32(ACTOR_BODY+0x44)==2.27f);
  steer_step(0.2f,0.0f);                                    /* 0.2 m without catching up: stays */
- assert(fed_value(0x1F)==0.0f&&!puppet.catching_up);
+ assert(fed_value(0x1F)==0.0f&&!puppet.actor.catching_up);
  while(steer_tick<135)steer_step(0.0f,0.0f);               /* the recording drifts +x without input: follow */
  v=frames_set[frame_count-1].v;
- assert(puppet.catching_up&&fabsf(v[0]-1.0f)<1e-3f&&fabsf(v[2])<1e-3f&&fabsf(fed_value(0x1F)-0.5f)<1e-5f);
+ assert(puppet.actor.catching_up&&fabsf(v[0]-1.0f)<1e-3f&&fabsf(v[2])<1e-3f&&fabsf(fed_value(0x1F)-0.5f)<1e-5f);
  assert(fabsf(guest_f32(ACTOR_BODY+0x44)-2.27f)<0.005f&&!unexpected&&teleport_calls==0); /* 3 m/s: full walk */
 
  /* Occupied: the recording stands still where the player still stands. No walking to it and no
@@ -333,25 +341,26 @@ int main(void){
  reset(1000,200,1);steer=1;steer_tick=0;steer_leaves=0;
  while(steer_tick<99)steer_step(0.0f,0.0f);
  steer_step(0.0f,3.0f);
- assert(puppet.occupied&&!puppet.catching_up&&fed_value(0x1F)==0.0f&&teleport_calls==0&&strstr(line,"occupied=1"));
+ assert(puppet.actor.occupied&&!puppet.actor.catching_up&&fed_value(0x1F)==0.0f&&teleport_calls==0&&strstr(line,"occupied=1"));
 
  /* Stuck check: driven, over 0.5 m off and under 0.25 m of movement in a second. */
- memset(&puppet,0,sizeof(puppet));puppet.now=5.0;
- assert(!puppet_stuck(0,0,0.6f,1));                        /* starts the check */
- puppet.now=5.9;assert(!puppet_stuck(0.2f,0,0.6f,1));
- puppet.now=6.01;assert(puppet_stuck(0.2f,0,0.6f,1));       /* 0.2 m in a second */
- assert(!puppet_stuck(0,0,0.6f,1));puppet.now=7.1;assert(!puppet_stuck(0.3f,0,0.6f,1)); /* 0.3 m: moving */
- assert(!puppet_stuck(0,0,0.6f,1));puppet.now=7.5;assert(!puppet_stuck(0,0,0.4f,1));   /* close enough: reset */
- puppet.now=8.6;assert(!puppet_stuck(0,0,0.6f,1));                                      /* restarted */
- assert(!puppet_stuck(0,0,0.6f,0));puppet.now=9.7;assert(!puppet_stuck(0,0,0.6f,1));   /* not driven: reset */
+ {PuppetActor s;memset(&s,0,sizeof(s));
+  assert(!puppet_stuck(&s,5.0,0,0,0.6f,1));                          /* starts the check */
+  assert(!puppet_stuck(&s,5.9,0.2f,0,0.6f,1));
+  assert(puppet_stuck(&s,6.01,0.2f,0,0.6f,1));                       /* 0.2 m in a second */
+  assert(!puppet_stuck(&s,6.01,0,0,0.6f,1));assert(!puppet_stuck(&s,7.1,0.3f,0,0.6f,1)); /* 0.3 m: moving */
+  assert(!puppet_stuck(&s,7.1,0,0,0.6f,1));assert(!puppet_stuck(&s,7.5,0,0,0.4f,1));     /* close enough: reset */
+  assert(!puppet_stuck(&s,8.6,0,0,0.6f,1));                                              /* restarted */
+  assert(!puppet_stuck(&s,8.6,0,0,0.6f,0));assert(!puppet_stuck(&s,9.7,0,0,0.6f,1));     /* not driven: reset */
+ }
  /* In the game: the stub puppet never moves, so it is stuck once the walking recording is
   * 0.5 m ahead for a second (drift corrections only past 10 m here); never onto the spot
   * where the player stands still. */
  reset(1000,1000,1);steer=1;steer_tick=0;steer_leaves=0;
  while(steer_tick<80){steer_frame(++steer_tick);tick();}
- assert(spawn_calls==1&&teleport_calls==1&&puppet.teleports==1&&puppet.stuck_teleports==1&&!unexpected);
+ assert(spawn_calls==1&&teleport_calls==1&&puppet.actor.teleports==1&&puppet.actor.stuck_teleports==1&&!unexpected);
  while(steer_tick<130){steer_frame(++steer_tick);tick();}
- assert(teleport_calls==1&&puppet.occupied&&strstr(line,"occupied=1"));
+ assert(teleport_calls==1&&puppet.actor.occupied&&strstr(line,"occupied=1"));
 
  /* Mode 2 teleports every update instead of setting yaw. */
  reset(1000,200,2);
@@ -361,14 +370,14 @@ int main(void){
  /* Correction off: no teleports even when far behind. */
  reset(1000,0,1);
  for(unsigned i=1;i<=150;i++){player_frame(i);tick();}
- assert(spawn_calls==1&&teleport_calls==0&&puppet.teleports==0);
+ assert(spawn_calls==1&&teleport_calls==0&&puppet.actor.teleports==0);
 
  /* Losing the puppet: logged, then respawned two seconds later. */
  reset(1000,200,1);
  for(unsigned i=1;i<=60;i++){player_frame(i);tick();}
  assert(spawn_calls==1);
  actor_alive=0;player_frame(61);tick();
- assert(lost_events==1&&puppet.guid==0);
+ assert(lost_events==1&&puppet.actor.guid==0);
  unsigned i=62;
  for(;i<62+59;i++){player_frame(i);tick();}
  assert(spawn_calls==1);

@@ -67,6 +67,14 @@ static unsigned long long now_ms;
 static unsigned long long player_state_fixture_ticks(void){return now_ms;}
 #include "dev_spawn.h"
 #include "multiplayer_guest.h"
+/* Multiplayer stays off in this fixture. */
+const MpConfig *mp_config(void){static MpConfig off;return &off;}
+MpNet *mp_net_default(void){return NULL;}
+int mp_net_send(MpNet *n,const void *d,size_t s,int r){(void)n;(void)d;(void)s;(void)r;return 0;}
+int mp_net_poll(MpNet *n,MpIncoming *o){(void)n;(void)o;return 0;}
+uint8_t mp_net_local_player(MpNet *n){(void)n;return MP_NO_PLAYER;}
+unsigned mp_net_peer_count(MpNet *n){(void)n;return 0;}
+double mp_net_now_ms(void){return 0;}
 
 enum {CONTROLLER=0x200000,HUMAN=0x210000,OTHER_HUMAN=0x220000,WEAPON=0x260000,
       SEAT=0x250000,MANAGER=0x251000,VEHICLE=0x252000};

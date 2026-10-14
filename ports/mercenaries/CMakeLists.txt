@@ -72,6 +72,7 @@ set(GAME_SOURCES
     src/recomp_prompts.c
     src/recomp_options_menu.c
     src/dev_menu.c
+    src/multiplayer_net.c
     src/dev_missions.c
     src/dev_overlay.c
     src/free_cam.c
@@ -118,6 +119,27 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     xinput
     winmm
 )
+
+# ENet 1.3.18 (MIT), the multiplayer transport. Vendored unmodified; see
+# third_party/enet/PROVENANCE.md. Only multiplayer_net.c includes its headers.
+add_library(mercenaries_enet STATIC
+    third_party/enet/callbacks.c
+    third_party/enet/compress.c
+    third_party/enet/host.c
+    third_party/enet/list.c
+    third_party/enet/packet.c
+    third_party/enet/peer.c
+    third_party/enet/protocol.c
+    third_party/enet/win32.c
+)
+target_include_directories(mercenaries_enet PUBLIC third_party/enet/include)
+target_compile_definitions(mercenaries_enet PRIVATE _WINSOCK_DEPRECATED_NO_WARNINGS)
+if(MSVC)
+    # Upstream mixes its protocol enums; the sources stay unmodified.
+    target_compile_options(mercenaries_enet PRIVATE /wd5287)
+endif()
+target_link_libraries(mercenaries_enet PUBLIC ws2_32 winmm)
+target_link_libraries(${PROJECT_NAME} PRIVATE mercenaries_enet)
 
 # MSVC-specific: large address aware, increase section limit for big generated files
 if(MSVC)
@@ -237,6 +259,9 @@ add_custom_command(TARGET mercenaries_recomp POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${XBOXRECOMP_DIR}/third_party/dsp56300/msvc-x64-v0.1.3/LICENSE"
         "$<TARGET_FILE_DIR:mercenaries_recomp>/licenses/DSP56300-LICENSE.txt"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/enet/LICENSE"
+        "$<TARGET_FILE_DIR:mercenaries_recomp>/licenses/ENet-LICENSE.txt"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${XBOXRECOMP_DIR}/src/licenses/xemu-LGPL-2.1.txt"
         "$<TARGET_FILE_DIR:mercenaries_recomp>/licenses/xemu-LGPL-2.1.txt"
