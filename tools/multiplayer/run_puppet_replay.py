@@ -60,16 +60,23 @@ class Run:
         self.process = None
 
     # --- setup and process -------------------------------------------------------------------
+    def developer_ini(self):
+        return ("[Developer]\n"
+                "developer_menu=0\nlogging=1\nplayer_state_log=1\nplayer_state_log_hz=10\n"
+                f"puppet_replay=1\npuppet_replay_delay_ms={self.args.delay_ms}\n"
+                f"puppet_correct_cm={self.args.correct_cm}\npuppet_yaw_mode={self.args.yaw_mode}\n")
+
+    def recomp_ini(self):
+        """Contents for the run's mercenaries_recomp.ini, or None to let the game create it."""
+        return None
+
     def prepare(self):
         if self.dir.exists():
             sys.exit(f"Use a new run name: {self.dir} exists")
         self.dir.mkdir(parents=True)
-        (self.dir / "developer.ini").write_text(
-            "[Developer]\n"
-            "developer_menu=0\nlogging=1\nplayer_state_log=1\nplayer_state_log_hz=10\n"
-            f"puppet_replay=1\npuppet_replay_delay_ms={self.args.delay_ms}\n"
-            f"puppet_correct_cm={self.args.correct_cm}\npuppet_yaw_mode={self.args.yaw_mode}\n",
-            encoding="ascii")
+        (self.dir / "developer.ini").write_text(self.developer_ini(), encoding="ascii")
+        if self.recomp_ini():
+            (self.dir / "mercenaries_recomp.ini").write_text(self.recomp_ini(), encoding="ascii")
         self.pad.write_text("0 1 1 0 0 0 0 0 0 0\n", encoding="ascii")  # seq 0 is ignored
         env = {k: v for k, v in os.environ.items() if not k.upper().startswith("MERCENARIES_")}
         env.update({
@@ -202,9 +209,9 @@ class Run:
             self.send(600, pressure=0x08)  # Y
         return False
 
-    def run_script(self):
+    def run_script(self, script=SCRIPT):
         timeline = []
-        for label, seconds, lx, ly, rx, ry, capture in SCRIPT:
+        for label, seconds, lx, ly, rx, ry, capture in script:
             start = self.player_samples()[-1][0]
             self.hold(seconds, lx, ly, rx, ry, capture=capture)
             timeline.append({"phase": label, "log_ms": start, "seconds": seconds})
