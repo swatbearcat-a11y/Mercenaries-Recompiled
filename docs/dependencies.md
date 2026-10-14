@@ -11,6 +11,7 @@ The root MIT license does not replace licenses on imported components.
 | DSP56300 emulator | `third_party/dsp56300/msvc-x64-v0.1.3` | `LICENSE` and `PROVENANCE.md`, including local patch hashes; patched source and Cargo.lock under `third_party/dsp56300/source-v0.1.3` |
 | SDL2 2.32.10 | `ports/mercenaries/third_party/SDL2` | `LICENSE.txt` and `README.md` |
 | xdvdfs 0.8.3 | `ports/mercenaries/third_party/xdvdfs` | `LICENSE` and `README.md` |
+| ENet 1.3.18 (multiplayer transport) | `ports/mercenaries/third_party/enet` | `LICENSE` (MIT) and `PROVENANCE.md` with the release archive and per-file SHA-256; unmodified; copied to `licenses/ENet-LICENSE.txt` by the build |
 | Windows SDK shader compiler | `ports/mercenaries/third_party/d3dcompiler` | `README.txt`, SDK license and third-party notices |
 | Hack Regular | `ports/mercenaries/resources/launcher` | `Hack-LICENSE.txt`, including underlying font notices |
 | Earlier Anton font | Same launcher resource directory | `OFL.txt`; retained reference, not currently embedded |

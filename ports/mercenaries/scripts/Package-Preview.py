@@ -8,7 +8,7 @@ from tools.recomp.source_package_policy import verify_source_zip
 
 PAYLOAD = ('Mercenaries Recompiled.exe', 'mercenaries_recomp.exe', 'SDL2.dll',
            'SDL2-LICENSE.txt', 'tools/AgencyFB-COPYRIGHT.txt',
-           'licenses/xboxrecomp-LICENSE.txt', 'licenses/DSP56300-LICENSE.txt',
+           'licenses/xboxrecomp-LICENSE.txt', 'licenses/DSP56300-LICENSE.txt', 'licenses/ENet-LICENSE.txt',
            'licenses/xemu-LGPL-2.1.txt', 'licenses/xemu-GPL-2.0.txt', 'compat/d3dcompiler_47_native.dll',
            'compat/sdk_license.rtf', 'compat/sdk_third_party_notices.rtf',
            'compat/README.txt', 'tools/xdvdfs.exe', 'tools/xdvdfs-LICENSE.txt')
