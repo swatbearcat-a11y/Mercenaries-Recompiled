@@ -64,11 +64,15 @@ Build:
 
 ## M2: two copies connected
 
-- [ ] Two installations side by side on one PC (the launcher refuses a second copy from the same folder). Check
-      that saves and caches don't collide.
-- [ ] The network library, host/join settings (command line or a `[Multiplayer]` section in an ini), off by default.
-- [ ] Exchange player state; one puppet per remote player; interpolation; dropping a player who times out.
-- [ ] Test on one PC, then over the internet with a second person.
+- [x] Two installations side by side on one PC (the launcher refuses a second copy from the same folder). Check
+      that saves and caches don't collide. Done 2026-10-13: the game itself allows it (the lock is the setup
+      launcher's, during installation). One installation runs two copies when each has its own
+      `MERCENARIES_CONFIG_ROOT` and save folder; the shader cache is safe to share (NOTES.md, "M2").
+- [x] The network library, host/join settings (command line or a `[Multiplayer]` section in an ini), off by default.
+      ENet 1.3.18; `mercenaries_recomp.ini` `[Multiplayer]`.
+- [x] Exchange player state; one puppet per remote player; interpolation; dropping a player who times out.
+- [ ] Test on one PC, then over the internet with a second person. One PC done: `tools/multiplayer/run_two_copies.py`
+      (m2-net-01 and -02). Over the internet: [TRYING-IT.md](TRYING-IT.md).
 
 ## M3: vehicles and weapons
 

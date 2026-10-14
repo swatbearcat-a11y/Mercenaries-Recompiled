@@ -437,6 +437,128 @@ Still open for M1:
 - streaming and hibernation (`dieuponhibernation=true` will remove it far from the player);
 - the merc model.
 
+## M2: two copies connected (2026-10-13)
+
+### Two copies on one PC
+
+The game has no single-instance check. The setup launcher's `.mercenaries-install.lock` (`setup_launcher.c`) only
+guards an installation in progress. What two copies of one installation would share:
+
+| What | Default | Separate it with |
+| --- | --- | --- |
+| Saves | `<root>\saves` beside the game data (`main.c` `select_game_dir`) | `MERCENARIES_SAVE_DIR` (or `MERCENARIES_TEST_SAVE_DIR` with input isolation) |
+| Settings (`developer.ini`, `mercenaries_recomp.ini`) | beside the exe | `MERCENARIES_CONFIG_ROOT` |
+| Preview logs | `preview-logs` beside the exe | `MERCENARIES_PREVIEW_LOG_DIR`. Not required: the file names carry the process id, though the rotation deletes the oldest files of either copy |
+| Shader cache | `%LOCALAPPDATA%\MercenariesRecomp\shader-cache-v1` | Nothing: each process writes a temporary file named after its process id and renames it into place |
+
+Checked: m2-two-copies-a and -b ran the puppet-replay script at the same time from one build, each with its own
+settings, saves and logs. Both finished, with results like single runs (no teleports, free error p90 0.45 and
+0.48 m).
+
+### Settings
+
+`[Multiplayer]` in `mercenaries_recomp.ini` (in `MERCENARIES_CONFIG_ROOT`, else beside the exe), read once:
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `mode` | `off` | `off`, `host` or `join` |
+| `address` | `127.0.0.1` | join: the host's IP or name |
+| `port` | 27410 | UDP port |
+| `bind` | empty (all) | host: the local address to listen on. `127.0.0.1` keeps a one-PC test off the network |
+| `max_players` | 4 | host, including itself (2 to 8) |
+| `timeout_ms` | 5000 | drop a player whose game acknowledges nothing for this long |
+| `interp_ms` | 100 | how far behind a player's newest update their puppet is drawn |
+| `name` | `Player` | not shown yet |
+
+Windows Firewall asks to allow the exe the first time it hosts on all interfaces. The one-PC test binds the host
+to 127.0.0.1, and a client joining 127.0.0.1 or `localhost` binds to loopback too, so nothing is opened. Over the
+internet, the host needs the UDP port forwarded, or both players can use a virtual LAN (Tailscale, ZeroTier), as
+PLAN.md says.
+
+### Design
+
+- **Transport, `multiplayer_net.c`.**
+  - ENet 1.3.18 (`ports/mercenaries/third_party/enet`) runs on its own thread. The guest thread queues outgoing
+    messages and takes incoming ones through two locked rings, at the world-update checkpoint. The transport
+    touches no guest memory.
+  - Star layout: clients connect to the host. The host is player 0 and welcomes each client with its id (1 to 7).
+  - The host writes the sender's id into byte 1 of every client message and passes it on to the other clients, so
+    a client can't speak for anyone else. Message types below 16 (transport) from a client are dropped.
+  - When a player leaves or times out, the host tells the others (`MP_MSG_LEFT`).
+  - The protocol version travels in ENet's connect data. A mismatch is refused (reason 1), as is a full server
+    (reason 2). A client retries every 3 s.
+  - Channel 0 is unreliable and sequenced (state); channel 1 is reliable (controls). At exit, each copy says
+    goodbye so the others drop it at once.
+- **Session, `multiplayer_session.h`** (guest thread). In normal gameplay it:
+  - sends the local player's state 20 times a second. That's 60 bytes: position, yaw, the controller's input,
+    move frame, walk and run speeds, gait, run allowed and strafe;
+  - sends the player's controls with their times, except movement (`0x1E`, `0x1F`) and the repeating `0x13`;
+  - keeps the last 64 updates of each remote player;
+  - estimates the clock offset as the smallest receive-minus-send time over this and the previous 2-second window,
+    so jitter adds no delay but clock drift is still followed.
+
+  It draws each remote player at `now - offset - interp_ms`:
+  - interpolated between updates (position linearly, yaw by the shorter way round);
+  - carried on along the last velocity for up to 200 ms past the newest update, then held;
+  - with controls fed once that time passes them.
+
+  The puppet, `mp_player_<id>`, comes from `puppet_drive.h`: steering on, a correction teleport past 3 m, and the
+  stuck teleport. When a player leaves or the host is lost, the puppet is removed through its `vt[0x10]` (as
+  `Actor_Remove` does), on the next gameplay update.
+- **`puppet_drive.h`** is the per-puppet driver that M1's replay used, split out. The replay experiment now
+  drives one `PuppetActor` through it, and its tests didn't change.
+- **Off by default.** With `mode=off` the tick returns at once, and ENet is never started.
+- **Logs.** `multiplayer` events: started, joined, connected, first update, left, lost the host. There's also a
+  `multiplayer` sample once a second (peers, remote players, sent counts). Each remote player gets an `mp-puppet`
+  sample 5 times a second: `behind_ms` (newest update minus the time drawn), `age_ms`, `offset_ms`, `updates`, and
+  the puppet fields that `puppet-replay` logs.
+
+### Tests
+
+- **`test_multiplayer_net_native`:** ENet over loopback, a host and clients in one process. It checks player ids,
+  id stamping and relaying, reliable and unreliable delivery, no echo, forged transport messages, a full server, a
+  polite leave, and the timeout of a frozen client (1.5 s).
+- **`test_multiplayer_session_native`:** stubbed guest memory and a fake transport. It checks:
+  - the off path;
+  - 20 updates a second in gameplay only;
+  - controls sent reliably;
+  - the clock offset and drawing delay;
+  - interpolation, carry-on and hold;
+  - controls fed on time;
+  - out-of-order and malformed updates ignored;
+  - two remote players;
+  - leaving, losing the host during a menu, and rejoining.
+- **`tools/multiplayer/run_two_copies.py --name <run> [--show]`** (about 6 minutes, nobody playing):
+  - starts a host and a client of one build, each with its own settings, saves and logs, connected over loopback;
+  - has both stand up, then the host walks the M1 script and the client a shorter one;
+  - scores how each copy draws the other in `summary.json`. That covers error while the target spot is free, the
+    target's distance from the sender's own path, `behind_ms`, update age and teleports.
+
+### Two-copy runs
+
+| Run | Direction | Updates | Free error median / p90 / max (m) | Target off the sender's path, max | Behind newest (median, p10–p90) | Update age (median) | Teleports |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| m2-net-01 | Host drawn by the client | 1621 | 0.09 / 0.16 / 0.23 | 0.04 m | 70 ms (37–72) | 28 ms | 0 |
+| m2-net-01 | Client drawn by the host | 1580 | 0.12 / 0.14 / 0.58 | 0.001 m | 64 ms (31–97) | 32 ms | 0 |
+| m2-net-02 | Host drawn by the client | 1624 | 0.02 / 0.12 / 0.26 | 0.04 m | 77 ms (p90 79) | 21 ms | 0 |
+| m2-net-02 | Client drawn by the host | 1585 | 0.08 / 0.11 / 0.58 | 0.002 m | 89 ms (p90 91) | 9 ms | 0 |
+
+- Both copies connected: "connected to the host as player 1" and "player 1 joined". Each spawned the other's
+  puppet with no AI, at the seat both start on.
+- About 20 updates a second each way.
+- In m2-net-02 the client was then killed without a goodbye. The host logged "player 1 left" and removed
+  `mp_player_1` 6.0 s later (the 5 s timeout plus at most a second), and kept running.
+- The screenshots happened to face away from the other player, so they show nothing of the puppets.
+
+The full test suite after M2 gives 466 of 492. The 26 failures are the same modules as the baseline's, and the
+three new ones pass.
+
+Still open for M2:
+- a test over the internet with a second person (`TRYING-IT.md`);
+- more than two players in game (the transport test covers three);
+- what happens to a puppet when the local world unloads or the players are far apart (`dieuponhibernation`);
+- names or markers over puppets.
+
 ## Addresses and layouts
 
 | Item | Value | Source / check |
@@ -452,6 +574,7 @@ Still open for M1:
 | Human classes | player `0x2E32B8` (type 0x1D, class id `[0x30D888]`), NPC `0x2E2CE0` (type 0x1C, `[0x30D4DC]`). `human+4` name hash; `human+0x200` its AI (vt+0xBC `0x3EDC0`) | players report. **Verified** |
 | Human slots | +0x30 `0x4C920` teleport (matrix); +0x64 `0x4C980` set position (physics body `+0x280`); +0x68 `0x4C8C0` set yaw; +0x1B4 SetAI; +0x1E4 control (`0x53D20` NPC, `0x5D5C0` player); +0x3BC `0x42750` returns the character controller `human+0x280` (fields: "The character controller" above) | XBE vtable reads; generated C. **Verified** |
 | Human methods (non-virtual) | `0x7E910(&v)` set move frame; `0x4E970(flag)` strafe mode; `0x4EA90` (virtual) walk/run speeds from animations | generated C; m1-replay-04..09. **Verified** |
+| Removing an actor | `Actor_Remove` `0x116590`: a dormant spore goes to `0x1EE0E0`, a live actor to its `vt[0x10]`. NPC human `vt[0x10]` = `0x56670`: it leaves its seat (`human+0x768`), then `0x1EE0E0(spore)` | generated C; XBE vtable read. **Verified** in m2-net-02: the host removed a killed client's puppet this way and kept running |
 | Actor matrix | `0x1EA470` (vtable slot `+0x58`) returns −(`+0xD0..+0xD8`) as forward; position `+0xE0..+0xE8` with `+0xEC`=1.0; setter `0x1EA510` writes `+0xE0`. Up axis is y | `test_forward_axis_and_static_position_setter`. **Verified** |
 | Seat chain | `human+0x768` seat → `*seat` manager → `*manager` vehicle | retail `0x590AA..0x590BC`. **Verified** |
 | Vehicle model | `vehicle+0x58` model hash | `dev_spawn.h`. **Derived** |
