@@ -55,8 +55,10 @@ the puppet is an ordinary NPC human, and the remote player's actor-level control
 
 Build:
 
-- [ ] Record your own play (the M0 state log plus the control IDs the player sends through `vt[0x1E4]`), spawn a
-      puppet human, and replay the recording on it a few seconds behind you.
+- [x] Record your own play (the M0 state log plus the control IDs the player sends through `vt[0x1E4]`), spawn a
+      puppet human, and replay the recording on it a few seconds behind you. Done 2026-10-13: `puppet_replay=1`,
+      tested by `tools/multiplayer/run_puppet_replay.py` with no player. The puppet stays within 0.3 m (p90) of the
+      recorded path while walking (NOTES.md, "M1 experiment").
 - [ ] The puppet walks, runs, turns and aims with the right animations; AI doesn't attack it and it doesn't attack
       AI; it isn't despawned; it survives streaming as you move around.
 

@@ -22,6 +22,9 @@ facts; **Hypothesis** = not yet checked in game.
   public repo, so every public build shows this warning.
 - `mercenaries-build-provenance.json` is written only by `Build-From-Iso.ps1`. After `Recompile.ps1` and
   `Build.ps1` it describes the previous exe.
+- `Patch-Generated.py` can't be rerun on an already-patched tree. It stops at "secondary inventory capacity
+  inherits actual predecessor CMP flags" (checked 2026-10-13 with `32093f1`'s patcher on a copy). `Recompile.ps1`
+  regenerates the C before patching, so always go through it.
 
 ## M0 status (2026-10-12)
 
@@ -247,6 +250,175 @@ Questions for the first experiment:
 4. Can the puppet keep the player's character model? It is spawned from an NPC template; the player templates are
    `template_hero_<x>`.
 
+Answers from the experiment below: 1. yes, once the move frame, gait and speeds are replayed too (raw stick values
+are wrong); 2. `aiType=none` spawns the human with no AI, so nothing competes; 3. vt+0x68 every update works;
+4. not tried yet.
+
+## M1 experiment: record-and-replay puppet (2026-10-13)
+
+`[Developer] puppet_replay=1` (with `logging=1` for the logs) records the player every world update and replays it
+on a puppet `puppet_replay_delay_ms` (default 3000) of guest time later. Code: `ports/mercenaries/src/puppet_replay.h`,
+called from `recomp_multiplayer_tick`. Off by default; when off, nothing reads or writes guest state.
+
+Options (`developer.ini`, read once at start):
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `puppet_replay` | 0 | 1 turns the experiment on |
+| `puppet_replay_delay_ms` | 3000 | 500–20000 |
+| `puppet_correct_cm` | 200 | Teleport when the puppet is further off than this; 0 turns off every correction teleport |
+| `puppet_yaw_mode` | 1 | 0 leaves the heading alone, 1 sets the recorded yaw every update (vt+0x68), 2 teleports every update |
+| `puppet_steer` | 1 | 0 replays the recording only, 1 steers toward the recorded position |
+
+### How it works
+
+- **Recording.** A generated-code hook at the entry of the player human's control slot `sub_0005D5C0` (patch
+  "Multiplayer player control recorder") stores every `(id, value)` the player's AI sends. Each world update also
+  stores the human's matrix and its character controller's movement state (below).
+- **Spawn.** Once a frame older than the delay exists: `0x174480` with `template_allies_soldier`, name
+  `mp_puppet_1` and properties `aiType=none`, `dieuponhibernation=true`, `path`/`encounter`/`squad=none`. Then
+  invincible (bit 0 of `+0x124`). It is re-found by GUID every update (`0x1EC220`); if lost, it is logged and
+  respawned 2 s later.
+- **Replay, every update, for the recorded frame one delay back:**
+  1. the move frame through the human setter `0x7E910`;
+  2. strafe mode through `0x4E970` when it differs;
+  3. walk and run speeds through the controller setters `0x13C5B0`/`0x13C5C0`;
+  4. the discrete control IDs recorded up to that time, through the puppet's `vt[0x1E4]`; raw `0x1E`/`0x1F` stick
+     events are skipped;
+  5. the movement input as `0x1E`/`0x1F`, scaled so the puppet picks the recorded gait;
+  6. the yaw through vt+0x68, or a vt+0x30 teleport to the recorded matrix (drift, stuck, or yaw mode 2).
+- **Steering** (`puppet_drive`). The input alone doesn't say where the player went. Sliding along a wall, being
+  pushed, and animations that move the player without input (standing up from the seat) aren't in it, and a puppet
+  slightly off the path collides differently. So the puppet heads for the recorded velocity (over the last 0.1 s)
+  plus 1.5/s × its horizontal offset.
+  - While the recording has input: the frame turns up to 90° and the speed scales by 0.25–1.5.
+  - Without input: the puppet walks while that velocity is over 0.3 m/s or it is more than 0.3 m away, and stops
+    within 0.1 m.
+- **Stuck.** A puppet that is fed input, more than 0.5 m off, and moves less than 0.25 m in a second is teleported.
+- **Occupied target.** There is no correction onto a spot the local player is standing on: the puppet would be
+  pushed straight off it again. On one PC the target *is* the player whenever the player stands still.
+
+### The character controller (verified in retail code and in game)
+
+`human->vt[0x3BC]()` is `0x42750` (`lea eax,[ecx+0x280]`) for both human vtables, so the controller is
+`human + 0x280`. Its constructor is `0x13D7C0` (vtable `0x2F1748`) and its reset is `0x13C950`. The locomotion update
+`0x13D8C0` reads:
+
+| Field | Meaning | Evidence |
+| --- | --- | --- |
+| `+0x08` | Stance: 2 standing, 1 crouched (walks only). `0x13C5F0` sets it; control `0x4E` (L3) toggles it through human vt+0x2FC | `0x13E013`; NPC switch table `0x53EBC`/`0x53EE4` |
+| `+0x0C` | Gait the update picked: 0 idle, 1 walk, 2 run | `0x13E060..0x13E086`; existing `[HUMAN-MOVE-STATE]` diagnostic; logged |
+| `+0x1C` | **Move frame**, a unit vector, default (0,0,−1). The world direction is the frame's heading plus the input's (`0x1F8860` yaws added); forward is along the frame, strafe along (−z, x) | `0x13DDD0..0x13DE16`; m1-replay-04 |
+| `+0x30`, `+0x34` | Strafe and forward input, clamped to ±1 | setters `0x13C540`/`0x13C570` |
+| `+0x44`, `+0x48` | Walk and run speed (m/s) | read at `0x13E074`/`0x13E07E`; logged |
+| `+0x65` | Run allowed. The player's gait stays 1 at input 0.987 in the C-17, so it is 0 there (**Derived**) | `0x13E007`; written by human virtual `0x558B0` |
+| `+0x68` | Strafe mode | set by `0x13C5D0` (if `+0x67`), from human `0x4E970` |
+| `+0x94` | Body orientation, used as a quaternion (**Derived**) | copied out by `0x13C4B0` |
+| `+0xA4` | Human controlled (1 for the player): shorter keep-running threshold, direct velocity instead of 15 m/s² acceleration | `0x13DDBF`, `0x13E08C` |
+| `+0xE4` | Velocity | existing `sample_human_movement.py` |
+
+- **Gait choice.** The input magnitude, after a 0.01 dead zone (`0x2DC09C`), against a threshold:
+  - 2.0 (never run) when run isn't allowed or the human is crouched;
+  - 0.95 to start running (`0x2E0B9C`);
+  - 0.7 to keep running (`0x2DC3E0`), or 0.6 when human controlled (`0x2DC394`).
+
+  The speed is the gait's speed. It doesn't scale with the input.
+- **Speeds come from the animations.** Human vt method `0x4EA90` sets `+0x44`/`+0x48` from the root-motion length of
+  its animations:
+  - standing: walk hash `0x72EEC861`, run `0x9E37C249`;
+  - crouched: walk `0x28F11295`, and the run speed is left as it is.
+
+  Logged at spawn: player merc 2.27/8.47, allied soldier 1.34/4.93.
+- **Other NPC control IDs** (switch at `0x53D20`):
+  - `0x01`/`0x02` set `+0x6BC`/`+0x6BD` above a threshold;
+  - `0x06` calls vt+0x368;
+  - `0x2F` is the jump request (existing diagnostic);
+  - `0x30` and `0x31` (vt+0x36C) do other things;
+  - everything else goes to the base handler `0x41C50`.
+- **Opening C-17:** the player walks at 2.27 m/s even at full stick (gait 1 logged at input 0.987), so running is
+  off there.
+- **The player's input is camera-relative** because the player's code keeps the move frame on the camera; the
+  input values themselves are plain stick values.
+- **Other functions.**
+  - `0x7E910(human, &vector)` sets the move frame to the normalized vector (`0x112B0`, a manual function).
+  - AI turning `0x7F520` sets the frame, then strafe mode or the yaw.
+  - Set yaw `0x4C8C0`: controller `0x13F130`, then `0x13CE30` builds a matrix (not the inputs), then vt+0x30.
+
+### Other findings
+
+- **`aiType=none` works.** The human spawns with `human+0x200 == 0` (logged as `ai=00000000` in every run), and
+  nothing overrides the fed controls.
+- **Yaw.** `-atan2(back.x, back.z)` of matrix row `+0xD0`. The first run used the opposite sign and turned the
+  puppet 180°.
+- **IDs the player sent** during the scripted walk:
+  - `0x13` every update while the stick is held (the "LY burst" from the input report);
+  - `0x00`, `0x19`, `0x1A`, `0x1C`, `0x20`, `0x21`, `0x3E`, `0x3F` around the stand-up from the seat.
+
+  All are fed to the puppet. None of them is in the NPC switch, so they go to its default, the base handler
+  `0x41C50` (vehicle IDs `0x33..0x42`). The seat appears to put the mapper in a vehicle state. No visible effect.
+- **Merc templates.** `assets.dsk` holds `template_hero_{american,brit,swede,hansolo,indianajones}`. Their
+  properties include `GeometryFile prokat_hum_<x>` and `animationTable player_<x>`. Whether spawning one makes a
+  second `RsAiPlayer` is untested, so the puppet is still an allied soldier. Next to try: the soldier template
+  with those two properties overridden.
+- **Test gamepad captures.** The game saves the bitmap 200 ms after the command's hold expires, and drops it if a
+  newer command arrives first. So a capture needs the stick released for about half a second.
+
+### Automated run
+
+`tools/multiplayer/run_puppet_replay.py --name <new run>` (from `.venv`, about 4–5 minutes, needs the build and
+the extracted game). Nobody has to play. It:
+
+1. writes a private `developer.ini`, config and save folder under `artifacts/test-runs/<run>/`;
+2. starts a New Game in a hidden, input-isolated, muted process with the existing test hooks:
+   - the exact new-game sequence;
+   - movie skip;
+   - automatic Y at the "Stand Up" prompt;
+   - `MERCENARIES_TEST_GAMEPAD_FILE`;
+3. waits for normal gameplay and the stand-up, then checks that the stick moves the player;
+4. walks a script through the C-17: forward, stop, turn right, forward, strafe left, backward, stop. It takes
+   screenshots after three phases and once more after the puppet finishes;
+5. kills the game and writes `summary.json`:
+   - error statistics, overall and on unoccupied samples;
+   - teleports;
+   - speed ratio and direction error while the recording moves;
+   - gait match and path lengths;
+   - the phase timeline.
+
+Options: `--delay-ms`, `--yaw-mode`, `--correct-cm`, `--timeout`. The run doesn't pass `puppet_steer`, so it uses
+the default.
+
+### Runs (same scripted walk; error = puppet to recorded position, 5 samples/s)
+
+"Free" means samples where the player isn't standing on the puppet's target (more than 0.9 m away). The rest, about
+250 of 320, are the long idle stretches, which can't score anything but the player's own collision. Free errors for
+runs 02–08 were recomputed afterwards from the player-state log.
+
+| Run | Change | Free error median / p90 / max (m) | Teleports | Speed ratio | Direction error p90 |
+| --- | --- | --- | --- | --- | --- |
+| 01 | first run: the player never moved (a manual command before the stand-up stopped auto-Y); yaw 180° off | – | 0 | – | – |
+| 02 | raw stick replay | 1.23 / 1.79 / 1.96 | 15 | 0.03 | 169° |
+| 03 | controller input (`+0x30`/`+0x34`) instead of the stick: runs at 5 m/s along its spawn frame | 1.55 / 1.86 / 1.99 | 13 | 0.30 | 159° |
+| 04 | + move frame, + gait scaling | 1.02 / 1.57 / 1.94 | 3 | 0.59 | 75° |
+| 05 | + the player's walk/run speeds | 1.22 / 1.55 / 1.75 | 0 | 1.00 | 79° |
+| 06 | + steering by input direction (max 45°) | 0.11 / 0.27 / 0.73 | 1 | 0.97 | 17° |
+| 07 | steering by recorded velocity (max 90°) | 0.09 / 0.27 / 0.66 | 0 | 1.02 | 17° |
+| 08 | + stuck teleport | 0.10 / 0.22 / 0.46 | 8 (7 stuck) | 0.85 | 11° |
+| 09 | no correction onto the player's spot | 0.09 / 0.29 / 0.72 | 1 | 0.87 | 8° |
+
+- **In every run:** yaw error median 0° (p90 0.1°); `ai=00000000`; one spawn; no spawn failures.
+- **Run 08's stuck teleports** were all onto the standing player.
+- **Run 09's last two screenshots** show the puppet beside the player.
+- **Speed-ratio p10 near 0** comes from moments the puppet is blocked by the player or cargo.
+- **Exe hash** of the run-09 build: `080A1E62005FF4C4BEF977DE6FEAD63BFE06ACE02F6AA484EC172A6679970DDE`.
+
+Still open for M1:
+- running (not possible in the C-17);
+- aiming (aim `0x28`/`0x29` goes to the camera, so it needs to come from snapshots);
+- firing;
+- AI reactions to the puppet;
+- streaming and hibernation (`dieuponhibernation=true` will remove it far from the player);
+- the merc model.
+
 ## Addresses and layouts
 
 | Item | Value | Source / check |
@@ -260,7 +432,8 @@ Questions for the first experiment:
 | `RsAiPlayer` fields | +0xC name hash; +0x10 controlled entity (the human on foot is **Verified**; the vehicle while driving is **Derived**); +0x18 state; +0x998 human; +0x99C flag copied to human+0x124 bit 0 | players report, `test_player_actor_retail.py` |
 | Player creation | `0x183C80`: `0x174480(0x4031B0, [0x3C04A0], "player0", &matrix, 0, 0)`; factory `0x173A60` case "Player" → `0x170630` + human `0x5CB60` (vtable `0x2E32B8`, 0xEE0 bytes); `ai+0x998 = human`; SetAI via human vt+0x1B4 | generated C. **Verified** |
 | Human classes | player `0x2E32B8` (type 0x1D, class id `[0x30D888]`), NPC `0x2E2CE0` (type 0x1C, `[0x30D4DC]`). `human+4` name hash; `human+0x200` its AI (vt+0xBC `0x3EDC0`) | players report. **Verified** |
-| Human slots | +0x30 `0x4C920` teleport (matrix); +0x64 `0x4C980` set position (physics body `+0x280`); +0x68 `0x4C8C0` set yaw; +0x1B4 SetAI; +0x1E4 control (`0x53D20` NPC, `0x5D5C0` player); +0x3BC locomotion object (`+0x30` strafe, `+0x34` forward) | XBE vtable reads; generated C. **Verified** |
+| Human slots | +0x30 `0x4C920` teleport (matrix); +0x64 `0x4C980` set position (physics body `+0x280`); +0x68 `0x4C8C0` set yaw; +0x1B4 SetAI; +0x1E4 control (`0x53D20` NPC, `0x5D5C0` player); +0x3BC `0x42750` returns the character controller `human+0x280` (fields: "The character controller" above) | XBE vtable reads; generated C. **Verified** |
+| Human methods (non-virtual) | `0x7E910(&v)` set move frame; `0x4E970(flag)` strafe mode; `0x4EA90` (virtual) walk/run speeds from animations | generated C; m1-replay-04..09. **Verified** |
 | Actor matrix | `0x1EA470` (vtable slot `+0x58`) returns −(`+0xD0..+0xD8`) as forward; position `+0xE0..+0xE8` with `+0xEC`=1.0; setter `0x1EA510` writes `+0xE0`. Up axis is y | `test_forward_axis_and_static_position_setter`. **Verified** |
 | Seat chain | `human+0x768` seat → `*seat` manager → `*manager` vehicle | retail `0x590AA..0x590BC`. **Verified** |
 | Vehicle model | `vehicle+0x58` model hash | `dev_spawn.h`. **Derived** |
