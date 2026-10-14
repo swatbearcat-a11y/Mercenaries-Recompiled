@@ -14561,6 +14561,15 @@ PATCHES += (GeneratedPatch("Multiplayer world-thread checkpoint",
     '    { void recomp_multiplayer_tick(uint32_t,uint32_t);\n'
     '      recomp_multiplayer_tick(ecx,MEM32(esp+4u)); }\n\nloc_001702D0: ;'),)
 
+# Multiplayer recording sees every control the player's AI sends to its human:
+# entry of the player human's control slot (vtable 0x2E32B8 slot +0x1E4, thiscall
+# id, value). puppet_replay.h records only while its developer option is on.
+PATCHES += (GeneratedPatch("Multiplayer player control recorder",
+    '    RECOMP_TRACE_FUNC(0x0005D5C0u);\n\nloc_0005D5C0: ;',
+    '    RECOMP_TRACE_FUNC(0x0005D5C0u);\n'
+    '    { void recomp_multiplayer_player_control(uint32_t,uint32_t,uint32_t);\n'
+    '      recomp_multiplayer_player_control(ecx,MEM32(esp+4u),MEM32(esp+8u)); }\n\nloc_0005D5C0: ;'),)
+
 # The legal-credit movement mode (7) branches into the default arm, immediately
 # before the shared AddName commit/epilogue. It is not a standalone empty return.
 PATCHES += (GeneratedPatch("Credits stationary name placement continuation",

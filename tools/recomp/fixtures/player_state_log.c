@@ -47,6 +47,11 @@ static void xbox_preview_log_sample(const char *tag,const char *fmt,...){
  va_start(a,fmt);vsnprintf(line,sizeof(line),fmt,a);va_end(a);samples++;
 }
 int recomp_dev_player_state_log_hz(void){return hz;}
+/* The puppet replay experiment stays off in this fixture. */
+int recomp_dev_puppet_replay_delay_ms(void){return 0;}
+int recomp_dev_puppet_correct_cm(void){return 200;}
+int recomp_dev_puppet_yaw_mode(void){return 1;}
+int recomp_dev_puppet_steer(void){return 1;}
 /* What the stubbed retail calls return. */
 static uint32_t retail_controller,retail_human,retail_weapon;static unsigned lookups,weapon_calls;
 static void retail_call(void){

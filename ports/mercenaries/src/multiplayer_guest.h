@@ -6,9 +6,11 @@
 #ifndef MERCENARIES_MULTIPLAYER_GUEST_H
 #define MERCENARIES_MULTIPLAYER_GUEST_H
 #include "player_state_log.h"
+#include "puppet_replay.h"
 
 void recomp_multiplayer_tick(uint32_t world, uint32_t delta_bits)
 {
     player_state_log_tick(world, delta_bits);
+    puppet_replay_tick(world, delta_bits);
 }
 #endif

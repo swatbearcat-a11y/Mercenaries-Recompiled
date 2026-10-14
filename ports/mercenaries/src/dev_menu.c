@@ -86,6 +86,46 @@ int recomp_dev_player_state_log_hz(void) {
     }
     return hz;
 }
+/* M1 puppet replay experiment: replay delay in ms (0 when off; 500-20000,
+ * default 3000), drift distance before a teleport correction in cm (0 = never,
+ * default 200), heading mode (0 none, 1 set yaw each update, 2 teleport each
+ * update; default 1) and steering toward the recorded position (0 off, 1 on;
+ * default 1). */
+int recomp_dev_puppet_replay_delay_ms(void) {
+    static int delay = -1;
+    if (delay < 0) {
+        delay = 0;
+        if (developer_setting("puppet_replay")) {
+            int requested = developer_number("puppet_replay_delay_ms", 3000);
+            delay = requested >= 500 && requested <= 20000 ? requested : 3000;
+        }
+    }
+    return delay;
+}
+int recomp_dev_puppet_correct_cm(void) {
+    static int distance = -1;
+    if (distance < 0) {
+        int requested = developer_number("puppet_correct_cm", 200);
+        distance = requested >= 0 && requested <= 100000 ? requested : 200;
+    }
+    return distance;
+}
+int recomp_dev_puppet_yaw_mode(void) {
+    static int mode = -1;
+    if (mode < 0) {
+        int requested = developer_number("puppet_yaw_mode", 1);
+        mode = requested >= 0 && requested <= 2 ? requested : 1;
+    }
+    return mode;
+}
+int recomp_dev_puppet_steer(void) {
+    static int steer = -1;
+    if (steer < 0) {
+        int requested = developer_number("puppet_steer", 1);
+        steer = requested == 0 ? 0 : 1;
+    }
+    return steer;
+}
 #define C_BG RGB(25,29,35)
 #define C_FIELD RGB(36,42,50)
 #define C_TEXT RGB(224,230,237)
