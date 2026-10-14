@@ -57,8 +57,9 @@ Read before changing code: `ARCHITECTURE.md`, `CODE_MAP.md`, `SUBSYSTEMS.md`, `D
   them (`0x90470`), and so does NPC AI. Teleport a human with `vt[0x30](&matrix)` (as respawn does). Movement
   input (`0x1E`/`0x1F`) is relative to the character controller's move frame (`human+0x280`, `+0x1C`), and the
   speed is the gait's walk or run speed: replay all of it, as `puppet_replay.h` does (NOTES.md, "M1 experiment").
-- Automated in-game runs with nobody playing: `tools/multiplayer/run_puppet_replay.py` starts a hidden New Game,
-  drives the test gamepad file, and leaves logs, screenshots and `summary.json` in `artifacts/test-runs/<run>`.
+- Automated in-game runs with nobody playing: `tools/multiplayer/run_puppet_replay.py` starts a hidden New Game
+  (`--show` to watch it), drives the test gamepad file, and leaves logs, screenshots and `summary.json` in
+  `artifacts/test-runs/<run>`.
 - World-update checkpoint: `Patch-Generated.py` inserts `recomp_dev_spawn_tick()`, the boids tick and
   `recomp_multiplayer_tick(ecx, frame seconds)` (`multiplayer_guest.h`) at the top of `sub_001702D0`. Multiplayer
   per-update work goes in `recomp_multiplayer_tick`; keep the `TRANSLATOR_INLINED_PATCHES` text in step.

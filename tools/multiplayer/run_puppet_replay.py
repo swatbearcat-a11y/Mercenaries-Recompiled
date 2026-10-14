@@ -1,13 +1,14 @@
 """Automated M1 puppet-replay run (no person needed).
 
-Starts a New Game in a hidden, input-isolated, muted game process with a private config and
-save folder, walks a scripted path through the opening C-17 with the test gamepad file, lets the
-puppet (developer option puppet_replay) replay it, captures screenshots, stops the game and scores
-the replay from the preview logs.
+Starts a New Game in a hidden (or, with --show, visible), input-isolated, muted game process with
+a private config and save folder, walks a scripted path through the opening C-17 with the test
+gamepad file, lets the puppet (developer option puppet_replay) replay it, captures screenshots,
+stops the game and scores the replay from the preview logs. With --show the window opens without
+taking focus, and keyboard, mouse and controllers still don't reach the game.
 
 Usage (from the repo root):
   .venv\\Scripts\\python.exe tools\\multiplayer\\run_puppet_replay.py --name m1-replay-01
-  options: --delay-ms 3000 --yaw-mode 1 --correct-cm 200 --timeout 420
+  options: --show --delay-ms 3000 --yaw-mode 1 --correct-cm 200 --timeout 420
 
 Output: artifacts/test-runs/<name>/ with preview-logs, gamepad-*.bmp/png captures and summary.json.
 """
@@ -28,6 +29,7 @@ EXE = ROOT / "build/mercenaries/bin/Release/mercenaries_recomp.exe"
 GAME = ROOT / "game_files/mercenaries-retail"
 LOG_LINE = re.compile(r"^\[(\d+)\] \[([^\]]+)\] (.*)$")
 FULL = 32767
+SW_SHOWNOACTIVATE = 4  # the window's first ShowWindow takes this from STARTUPINFO
 
 # Scripted walk: (label, seconds, lx, ly, rx, ry, capture-at-end). Full stick = run.
 SCRIPT = [
@@ -74,7 +76,6 @@ class Run:
             "MERCENARIES_CONFIG_ROOT": str(self.dir),
             "MERCENARIES_PREVIEW_LOG_DIR": str(self.dir / "preview-logs"),
             "MERCENARIES_TEST_SAVE_DIR": str(self.dir / "saves"),
-            "MERCENARIES_HIDE_WINDOW": "1",
             "MERCENARIES_TEST_ISOLATE_INPUT": "1",
             "MERCENARIES_TEST_MUTE_HOST_AUDIO": "1",
             "MERCENARIES_TEST_EXACT_NEW_GAME_SEQUENCE": "1",
@@ -94,6 +95,8 @@ class Run:
             "MERCENARIES_CAPTURE_TEST_GAMEPAD_PREFIX": str(self.dir / "gamepad"),
             "MERCENARIES_DUMP_CRASH_GUEST_PATH": str(self.dir / "crash-guest.bin"),
         })
+        if not self.args.show:
+            env["MERCENARIES_HIDE_WINDOW"] = "1"
         (self.dir / "settings.json").write_text(json.dumps(
             {k: v for k, v in env.items() if k.startswith("MERCENARIES_")}, indent=2), encoding="utf-8")
         return env
@@ -101,7 +104,13 @@ class Run:
     def launch(self, env):
         out = open(self.dir / "stdout.log", "wb")
         err = open(self.dir / "stderr.log", "wb")
-        self.process = subprocess.Popen([str(EXE), str(GAME)], cwd=str(ROOT), env=env, stdout=out, stderr=err)
+        startup = None
+        if self.args.show:
+            startup = subprocess.STARTUPINFO()
+            startup.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startup.wShowWindow = SW_SHOWNOACTIVATE
+        self.process = subprocess.Popen([str(EXE), str(GAME)], cwd=str(ROOT), env=env, stdout=out, stderr=err,
+                                        startupinfo=startup)
         (self.dir / "pid.txt").write_text(str(self.process.pid), encoding="ascii")
         print(f"launched pid {self.process.pid}; run dir {self.dir}")
 
@@ -294,6 +303,8 @@ def bmp_to_png(src, dst):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--name", required=True)
+    parser.add_argument("--show", action="store_true",
+                        help="show the game window (it doesn't take focus; your input still doesn't reach it)")
     parser.add_argument("--delay-ms", type=int, default=3000)
     parser.add_argument("--yaw-mode", type=int, default=1, choices=(0, 1, 2))
     parser.add_argument("--correct-cm", type=int, default=200)

@@ -387,6 +387,13 @@ the extracted game). Nobody has to play. It:
 Options: `--delay-ms`, `--yaw-mode`, `--correct-cm`, `--timeout`. The run doesn't pass `puppet_steer`, so it uses
 the default.
 
+`--show` keeps the window visible so you can watch. It leaves `MERCENARIES_HIDE_WINDOW` unset and launches with
+`STARTUPINFO` `SW_SHOWNOACTIVATE`, so the window opens without taking focus (checked in m1-replay-10: the
+foreground window stayed the user's browser). `MERCENARIES_TEST_ISOLATE_INPUT` still keeps the keyboard, mouse
+capture and controllers away from it. With a fresh config the display mode defaults to windowed, so the window
+doesn't go fullscreen. Closing the window stops the game; the script finishes its timeline and scores what was
+recorded.
+
 ### Runs (same scripted walk; error = puppet to recorded position, 5 samples/s)
 
 "Free" means samples where the player isn't standing on the puppet's target (more than 0.9 m away). The rest, about
@@ -404,9 +411,15 @@ runs 02–08 were recomputed afterwards from the player-state log.
 | 07 | steering by recorded velocity (max 90°) | 0.09 / 0.27 / 0.66 | 0 | 1.02 | 17° |
 | 08 | + stuck teleport | 0.10 / 0.22 / 0.46 | 8 (7 stuck) | 0.85 | 11° |
 | 09 | no correction onto the player's spot | 0.09 / 0.29 / 0.72 | 1 | 0.87 | 8° |
+| 10 | same code, `--show` (visible window) | 0.09 / 0.28 / 1.75 | 0 | 0.99 | 152° |
 
 - **In every run:** yaw error median 0° (p90 0.1°); `ai=00000000`; one spawn; no spawn failures.
 - **Run 08's stuck teleports** were all onto the standing player.
+- **Run 10's outliers.** At the end, the puppet replayed the last backward walk into the standing player. It
+  stayed 1.04–1.08 m from the player, the closest two humans get, while its target crossed the player's spot. Two
+  samples had the target 0.94 and 1.08 m from the player, just outside the 0.9 m "occupied" radius. They give the
+  1.75 m max and the 152° direction p90. Next: a radius of about 1.2 m, and no offset steering toward an occupied
+  spot.
 - **Run 09's last two screenshots** show the puppet beside the player.
 - **Speed-ratio p10 near 0** comes from moments the puppet is blocked by the player or cargo.
 - **Exe hash** of the run-09 build: `080A1E62005FF4C4BEF977DE6FEAD63BFE06ACE02F6AA484EC172A6679970DDE`.
